@@ -142,6 +142,7 @@ with st.sidebar:
     if st.button("🗑️  Clear chat history", use_container_width=True):
         st.session_state.pop("chat_session", None)
         st.session_state.pop("messages", None)
+        st.session_state.pop("client", None)
         st.rerun()
 
 if not api_key:
@@ -151,11 +152,21 @@ if not api_key:
 # --------------------------------------------------------------------------
 # Configure the Gemini client
 # --------------------------------------------------------------------------
-try:
-    client = genai.Client(api_key=api_key)
-except Exception as e:
-    st.error(f"Failed to configure Gemini client: {e}")
-    st.stop()
+# Keep the client in session_state: Streamlit reruns this whole script on
+# every interaction, and if we created a fresh client each time, the old
+# one (still referenced by chat_session) would get garbage-collected and
+# closed mid-conversation.
+if "client" not in st.session_state or st.session_state.get("api_key") != api_key:
+    try:
+        st.session_state.client = genai.Client(api_key=api_key)
+        st.session_state.api_key = api_key
+        # Force the chat session to be rebuilt against the new client
+        st.session_state.pop("chat_session", None)
+    except Exception as e:
+        st.error(f"Failed to configure Gemini client: {e}")
+        st.stop()
+
+client = st.session_state.client
 
 # --------------------------------------------------------------------------
 # Session state: message history + chat session object
