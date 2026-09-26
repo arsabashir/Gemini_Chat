@@ -5,7 +5,8 @@ A Streamlit web app for conversational chat with Google's Gemini-Pro model.
 
 import os
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # --------------------------------------------------------------------------
 # Page configuration
@@ -112,12 +113,11 @@ with st.sidebar:
     st.markdown("### ⚙️ Settings")
 
     api_key = st.text_input(
-    "Google API Key",
-    value=default_key,
-    type="password",
-    help="Get a key from https://aistudio.google.com/app/apikey",
-)
-    
+        "Google API Key",
+        value=default_key,
+        type="password",
+        help="Get a key from https://aistudio.google.com/app/apikey",
+    )
 
     st.markdown("&nbsp;", unsafe_allow_html=True)
     st.markdown("**Model**")
@@ -152,7 +152,7 @@ if not api_key:
 # Configure the Gemini client
 # --------------------------------------------------------------------------
 try:
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 except Exception as e:
     st.error(f"Failed to configure Gemini client: {e}")
     st.stop()
@@ -165,13 +165,15 @@ if "messages" not in st.session_state:
 
 if "chat_session" not in st.session_state or st.session_state.get("model_name") != model_name:
     try:
-        model = genai.GenerativeModel(model_name)
         # Rebuild history for the SDK's chat object from what's stored so far
         history = [
-            {"role": m["role"], "parts": [m["content"]]}
+            types.Content(role=m["role"], parts=[types.Part(text=m["content"])])
             for m in st.session_state.messages
         ]
-        st.session_state.chat_session = model.start_chat(history=history)
+        st.session_state.chat_session = client.chats.create(
+            model=model_name,
+            history=history,
+        )
         st.session_state.model_name = model_name
     except Exception as e:
         st.error(f"Failed to initialize model '{model_name}': {e}")
@@ -216,12 +218,11 @@ if prompt:
         placeholder = st.empty()
         full_response = ""
         try:
-            response = st.session_state.chat_session.send_message(
+            response = st.session_state.chat_session.send_message_stream(
                 prompt,
-                generation_config=genai.types.GenerationConfig(
+                config=types.GenerateContentConfig(
                     temperature=temperature,
                 ),
-                stream=True,
             )
             for chunk in response:
                 if chunk.text:
